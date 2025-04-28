@@ -28,6 +28,7 @@ class LDM(torch.nn.Module):
         self.lr = lr
 
         #parameters to be learned (latent representations)
+        self.gamma = nn.Parameter(torch.randn(1, device=device))
         self.beta = nn.Parameter(torch.randn(self.n_effects, device=device))
         self.w = torch.nn.Parameter(torch.randn(self.n_drugs, embedding_dim, device=device))  # Latent embeddings for drugs
         self.v = torch.nn.Parameter(torch.randn(self.n_effects, embedding_dim, device=device))  # Latent embeddings for side effects
@@ -67,7 +68,7 @@ class LDM(torch.nn.Module):
         dist = -torch.norm(self.w.unsqueeze(1) - self.v.unsqueeze(0), dim=2)
 
         # Latent variable \beta^T x_{i,j} + \alpha(u_i - u_j)
-        latent_var = linear_term + dist
+        latent_var = self.gamma + linear_term + dist
         
         for y in range(self.n_ordinal_classes):
             z1 = latent_var - thresholds[y]
