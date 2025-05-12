@@ -37,7 +37,12 @@ class LDM(torch.nn.Module):
         self.beta_thilde = nn.Parameter(torch.randn(self.n_ordinal_classes, device=device))
         self.a = nn.Parameter(torch.rand(1, device=device))
         self.b = nn.Parameter(torch.rand(1, device=device))
-    
+
+        #Weighting
+        self.values, self.counts = torch.unique(self.Aij, return_counts=True)
+        self.freqs = torch.tensor(self.counts, dtype=torch.float32, device= self.device)
+        self.class_weights = 1.0 / (self.freqs + 1e-6)  # Avoid div by 0
+        self.class_weights = self.class_weights / self.class_weights.sum()
     def __set_seed(self, seed):
         if seed is not None:
             torch.manual_seed(seed)
@@ -84,7 +89,6 @@ class LDM(torch.nn.Module):
     def ordinal_cross_entropy_loss(self):
     # Compute the predicted probabilities using the probit function
         probit_matrix = self.probit() 
-
         # Initialize loss variable
         loss = 0.0
 
@@ -95,10 +99,12 @@ class LDM(torch.nn.Module):
         # Compute the log-likelihood loss efficiently
         prob = probit_matrix  # Shape: (n_ordinal_classes, n_drugs, n_effects)
         # loss = -torch.sum(torch.log(torch.sum(prob * one_hot_target.permute(2, 0, 1), dim=0) + 1e-8))
-        loss = -torch.mean(torch.log(torch.sum(prob * one_hot_target.permute(2, 0, 1), dim=0) + 1e-8))
-        return loss
+        #loss = -torch.mean(torch.log(torch.sum(prob * one_hot_target.permute(2, 0, 1), dim=0) + 1e-8))
+        weighted_log_prob = torch.log(torch.sum(probit_matrix * one_hot_target.permute(2, 0, 1), dim=0) + 1e-8)
+        weighted_loss = -torch.sum(weighted_log_prob * (one_hot_target * self.class_weights.view(1, 1, -1)).sum(dim=2)) / (self.n_drugs * self.n_effects)
+        return weighted_loss
 
-    def train(self, print=False):
+    def train(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         #final_loss = None  # Store the last loss
         epoch_losses = []
@@ -111,9 +117,7 @@ class LDM(torch.nn.Module):
             
             #final_loss = loss.item()  # Store latest loss value
             epoch_losses.append(loss.item())
-            if print: 
-                if epoch % 10 == 0:  # Print every 10 epochs
-                    print(f"Epoch {epoch}/{self.n_epochs}, Loss: {loss.item():.4f}")
+            print(f"Epoch {epoch}/{self.n_epochs}, Loss: {loss.item():.4f}")
 
         return epoch_losses #,final_loss
 
