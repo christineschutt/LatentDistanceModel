@@ -34,7 +34,7 @@ class LDM(torch.nn.Module):
         self.v = torch.nn.Parameter(torch.randn(self.n_effects, embedding_dim, device=device))  # Latent embeddings for side effects
 
         # Parameters to be learned (thresholds)
-        self.beta_thilde = nn.Parameter(torch.randn(self.n_ordinal_classes, device=device))
+        self.beta_thilde = nn.Parameter(torch.randn((self.n_ordinal_classes-1), device=device))
         self.a = nn.Parameter(torch.rand(1, device=device))
         self.b = nn.Parameter(torch.rand(1, device=device))
 
@@ -79,16 +79,16 @@ class LDM(torch.nn.Module):
             z1 = latent_var - thresholds[y]
             z2 = latent_var - thresholds[y+1]
             probit_matrix[y, :, :] = normal_dist.cdf(z1) - normal_dist.cdf(z2)
-        return probit_matrix
+        return probit_matrix, latent_var
 
     
     def predict_categories(self):
-        probit_matrix = self.probit()  # Call probit to get probabilities
+        probit_matrix, _ = self.probit()  # Call probit to get probabilities
         return torch.argmax(probit_matrix, dim=0), probit_matrix
     
     def ordinal_cross_entropy_loss(self):
     # Compute the predicted probabilities using the probit function
-        probit_matrix = self.probit() 
+        probit_matrix, _ = self.probit() 
         # Initialize loss variable
         loss = 0.0
 
@@ -99,10 +99,10 @@ class LDM(torch.nn.Module):
         # Compute the log-likelihood loss efficiently
         prob = probit_matrix  # Shape: (n_ordinal_classes, n_drugs, n_effects)
         # loss = -torch.sum(torch.log(torch.sum(prob * one_hot_target.permute(2, 0, 1), dim=0) + 1e-8))
-        #loss = -torch.mean(torch.log(torch.sum(prob * one_hot_target.permute(2, 0, 1), dim=0) + 1e-8))
-        weighted_log_prob = torch.log(torch.sum(probit_matrix * one_hot_target.permute(2, 0, 1), dim=0) + 1e-8)
-        weighted_loss = -torch.sum(weighted_log_prob * (one_hot_target * self.class_weights.view(1, 1, -1)).sum(dim=2)) / (self.n_drugs * self.n_effects)
-        return weighted_loss
+        loss = -torch.mean(torch.log(torch.sum(prob * one_hot_target.permute(2, 0, 1), dim=0) + 1e-8))
+        # weighted_log_prob = torch.log(torch.sum(probit_matrix * one_hot_target.permute(2, 0, 1), dim=0) + 1e-8)
+        # weighted_loss = -torch.sum(weighted_log_prob * (one_hot_target * self.class_weights.view(1, 1, -1)).sum(dim=2)) / (self.n_drugs * self.n_effects)
+        return loss
 
     def train(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
